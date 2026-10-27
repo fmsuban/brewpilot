@@ -97,15 +97,41 @@ struct BrewView: View {
                             }
                         }
                         .frame(width: 110, height: 84)
-                        Button(session.phase == .idle ? "Start brew" : "Brewing…") {
-                            session.start(recipe: session.recipe)
-                        }
-                        .buttonStyle(BrewButtonStyle())
-                        .disabled(session.phase != .idle)
+                        phaseButton
                     }
                 }
                 .padding()
             }
+        }
+        .onAppear {
+            if CommandLine.arguments.contains("-simulateWeights") {
+                SimFeed.start(session)
+            }
+        }
+        .onChange(of: session.phase) { _, p in
+            UIApplication.shared.isIdleTimerDisabled = !(p == .idle || p == .done)
+        }
+    }
+
+    @ViewBuilder
+    private var phaseButton: some View {
+        switch session.phase {
+        case .idle:
+            Button("Start brew") { session.start(recipe: session.recipe) }
+                .buttonStyle(BrewButtonStyle())
+        case .prep:
+            Button("Confirm ready") { session.confirmPrep() }
+                .buttonStyle(BrewButtonStyle())
+        case .paused:
+            Button("Resume") { session.resume() }
+                .buttonStyle(BrewButtonStyle(accent: .brewGreen))
+        case .done:
+            Button("New brew") { session.start(recipe: session.recipe) }
+                .buttonStyle(BrewButtonStyle())
+        default:
+            Button("Brewing…") {}
+                .buttonStyle(BrewButtonStyle())
+                .disabled(true)
         }
     }
 
