@@ -1,0 +1,21 @@
+__pycache__/
+.venv/
+.pytest_cache/
+*.pyc
+.DS_Store
+
+# secrets (never commit API keys)
+.env
+.env.*
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Xcode
+DerivedData/
+*.xcuserdata/
+*.xcuserstate
+*.moved-aside
+ios/BrewPilot.xcodeproj/
