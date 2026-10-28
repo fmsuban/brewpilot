@@ -3,6 +3,7 @@ import Foundation
 
 // BLE central for the ESP32 scale (SPEC 7). 10 Hz notify, 10-byte packet:
 // u32 seq | i32 weight_cg | u8 flags | u8 battery (all little-endian).
+// The scale is headless: tare / calibration / stream control all go over BLE.
 
 enum ScaleUUID {
     static let service = CBUUID(string: "0000C0FF-EE00-4000-8000-00DECAFE0010")
@@ -37,6 +38,11 @@ struct WeightPacket {
 final class ScaleBLEManager: NSObject, ObservableObject {
     @Published var isConnected = false
     @Published var peripheralName: String?
+    @Published var weightG = 0.0
+    @Published var settled = false
+    @Published var overload = false
+    @Published var batteryPct: UInt8 = 0
+    @Published var lastPacketAt: Date?
 
     var onWeight: ((Double) -> Void)?
     var onConnectionChange: ((Bool) -> Void)?
@@ -45,6 +51,8 @@ final class ScaleBLEManager: NSObject, ObservableObject {
     private var scale: CBPeripheral?
     private var weightChar: CBCharacteristic?
     private var tareChar: CBCharacteristic?
+    private var calibChar: CBCharacteristic?
+    private var controlChar: CBCharacteristic?
 
     override init() {
         super.init()
@@ -60,8 +68,24 @@ final class ScaleBLEManager: NSObject, ObservableObject {
         guard let scale, let tareChar else { return }
         scale.writeValue(Data([0x01]), for: tareChar, type: .withResponse)
     }
-    // TODO(day 3): calib write (float grams), control start/stop/rate,
-    // auto-reconnect + "scale lost" surge after 1.5 s silence.
+
+    /// Tell the scale the mass currently on it (grams); it recomputes its
+    /// scale factor and persists it. Tare empty first.
+    func calibrate(knownGrams: Float) {
+        guard let scale, let calibChar else { return }
+        var g = knownGrams
+        scale.writeValue(Data(bytes: &g, count: 4), for: calibChar, type: .withResponse)
+    }
+
+    func setStreaming(_ on: Bool) {
+        guard let scale, let controlChar else { return }
+        scale.writeValue(Data([on ? 0x01 : 0x00]), for: controlChar, type: .withResponse)
+    }
+
+    func setRate(_ hz: UInt8) {
+        guard let scale, let controlChar else { return }
+        scale.writeValue(Data([0x02, hz]), for: controlChar, type: .withResponse)
+    }
 }
 
 extension ScaleBLEManager: CBCentralManagerDelegate {
@@ -97,11 +121,18 @@ extension ScaleBLEManager: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         for char in service.characteristics ?? [] {
-            if char.uuid == ScaleUUID.weight {
+            switch char.uuid {
+            case ScaleUUID.weight:
                 weightChar = char
                 peripheral.setNotifyValue(true, for: char)
-            } else if char.uuid == ScaleUUID.tare {
+            case ScaleUUID.tare:
                 tareChar = char
+            case ScaleUUID.calib:
+                calibChar = char
+            case ScaleUUID.control:
+                controlChar = char
+            default:
+                break
             }
         }
         isConnected = true
@@ -112,6 +143,11 @@ extension ScaleBLEManager: CBPeripheralDelegate {
         guard characteristic.uuid == ScaleUUID.weight,
               let data = characteristic.value,
               let packet = WeightPacket.parse(data) else { return }
+        weightG = packet.weightG
+        settled = packet.settled
+        overload = packet.overload
+        batteryPct = packet.batteryPct
+        lastPacketAt = Date()
         onWeight?(packet.weightG)
     }
 }

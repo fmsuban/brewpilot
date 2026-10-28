@@ -7,10 +7,8 @@
 
 class BleScale {
  public:
-  void begin();
-  void setEnabled(bool en);
-  bool enabled() const { return _enabled; }
-  bool connected() const { return _enabled && _connected; }
+  void begin();  // call once from setup; always advertises
+  bool connected() const { return _connected; }
   bool streaming() const { return _streaming; }
   uint8_t rateHz() const { return _rateHz; }
   void notifyWeight(uint32_t seq, int32_t cg, bool settled, bool overload, uint8_t batt);
@@ -28,7 +26,6 @@ class BleScale {
   void onCalibWrite(const uint8_t* data, size_t len);
   void onControlWrite(const uint8_t* data, size_t len);
 
-  bool _enabled = true;
   bool _started = false;
   bool _connected = false;
   bool _streaming = true;

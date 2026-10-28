@@ -37,7 +37,7 @@ class BleScale::WriteCb : public BLECharacteristicCallbacks {
 };
 
 void BleScale::begin() {
-  if (_started || !_enabled) return;
+  if (_started) return;
   BLEDevice::init(BREW_DEVICE_NAME);
   _server = BLEDevice::createServer();
   _server->setCallbacks(new ServerCb(this));
@@ -58,19 +58,6 @@ void BleScale::begin() {
   adv->setScanResponse(true);
   BLEDevice::startAdvertising();
   _started = true;
-}
-
-void BleScale::setEnabled(bool en) {
-  _enabled = en;
-  _connected = false;
-  if (!en && _started) {
-    BLEDevice::deinit(true);
-    _started = false;
-    _server = nullptr;
-    _weightChar = nullptr;
-  } else if (en && !_started) {
-    begin();
-  }
 }
 
 void BleScale::onConnect() { _connected = true; }

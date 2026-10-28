@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include "HX711.h"
 
+enum class CalResult : uint8_t { OK, NO_RESPONSE };
+
 class WeightSensor {
  public:
   void begin(uint8_t dout, uint8_t sck);
@@ -10,9 +12,13 @@ class WeightSensor {
   float scaleFactor() const { return _scale; }
   bool poll();  // non-blocking; true when a new filtered sample is ready
   float grams() const { return _grams; }
+  float rawFiltered() const { return _ema; }
+  uint32_t lastSampleMs() const { return _lastSample; }
   float flowMlS();  // g/s over FLOW_WINDOW_MS
   void tare();
-  void calibrate(float knownG);
+  // Never lets a bad calibration through: knownG out of range or no
+  // cell response. Negative polarity (inverted soldered kits) is accepted.
+  CalResult calibrate(float knownG);
 
  private:
   HX711 _hx;
@@ -22,6 +28,7 @@ class WeightSensor {
   bool _emaInit = false;
   float _offset = 0, _scale = 1;
   float _grams = 0;
+  uint32_t _lastSample = 0;
   static constexpr uint8_t HIST_N = 12;
   uint32_t _ht[HIST_N] = {0};
   float _hg[HIST_N] = {0};

@@ -17,6 +17,10 @@ struct BrewView: View {
                             .background(Color.caramel)
                             .clipShape(Capsule())
                         Spacer()
+                        Button("Tare") { session.scale.tare() }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(session.scaleConnected ? Color.caramel : Color.creamDim)
+                            .disabled(!session.scaleConnected)
                         Text(formatTimer(session.elapsedS))
                             .font(.title2.weight(.semibold))
                             .monospacedDigit()
@@ -26,15 +30,18 @@ struct BrewView: View {
 
                     VStack(spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(String(format: "%.1f", session.weightG))
-                                .font(.brewDisplay(88))
+                            Text(session.displayWeight(session.weightG))
+                                .font(.brewDisplay(72))
                                 .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.5)
                                 .foregroundStyle(Color.cream)
-                            Text("g")
+                            Text(session.unitLabel)
                                 .font(.title.weight(.semibold))
                                 .foregroundStyle(Color.creamDim)
                         }
-                        Text("target \(Int(session.targetG)) g · Δ \(deltaText)")
+                        .frame(height: 88)
+                        Text("target \(session.unitStr(session.targetG)) · Δ \(deltaText)")
                             .font(.subheadline)
                             .foregroundStyle(Color.creamDim)
                     }
@@ -44,7 +51,7 @@ struct BrewView: View {
                         HStack {
                             SectionTitle(text: "Flow")
                             Spacer()
-                            Text(String(format: "%.1f ml/s", session.flowMlS))
+                            Text(String(format: "%5.1f ml/s", session.flowMlS))
                                 .font(.subheadline.weight(.semibold))
                                 .monospacedDigit()
                                 .foregroundStyle(flowColor)
@@ -136,7 +143,7 @@ struct BrewView: View {
     }
 
     private var deltaText: String {
-        String(format: "%+.1f g", session.weightG - session.targetG)
+        "\(session.displayDelta(session.weightG - session.targetG)) \(session.unitLabel)"
     }
 
     private var flowColor: Color {

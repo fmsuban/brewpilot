@@ -93,3 +93,10 @@ iOS uses a dark theme (espresso black/cards, cream text, caramel accent,
 green in-zone): one `Theme.swift` with colors, cards, buttons, chips, and
 timer formatting shared by all four tabs. `BrewPilotApp` accepts an
 `-initialTab N` launch argument for screenshots.
+
+### D17: Headless scale, UI moved to the iOS Scale tab
+Dropped the ST7735S display, both buttons, on-device modes, and deep
+sleep: firmware is ESP32 + HX711 only (weigh, filter, stream 10 Hz over
+BLE, persist tare/calibration). Live weight, tare, g/oz units, timer
+with auto-start, and the calibration wizard all live in the iOS Scale
+tab (ex-Connect). Superseded: D8, D9, D12.

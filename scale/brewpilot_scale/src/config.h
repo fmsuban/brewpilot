@@ -5,28 +5,12 @@
 constexpr uint8_t PIN_HX_DOUT = 16;
 constexpr uint8_t PIN_HX_SCK = 4;
 
-// ---- TFT ST7735S (hardware SPI: SCK=12 MOSI=11 on S3) ----
-constexpr uint8_t PIN_TFT_CS = 10;
-constexpr uint8_t PIN_TFT_DC = 9;
-constexpr uint8_t PIN_TFT_RST = 8;
-constexpr uint8_t PIN_TFT_BL = 15;
-
-// ---- Buttons (active low, internal pull-ups) ----
-constexpr uint8_t PIN_BTN_TARE = 5;
-constexpr uint8_t PIN_BTN_TIMER = 6;
-
 // ---- Timing ----
-constexpr uint32_t OUTPUT_INTERVAL_MS = 100;  // 10 Hz UI + BLE + serial
-constexpr uint32_t DEBOUNCE_MS = 50;
-constexpr uint32_t LONG_PRESS_MS = 2000;
-constexpr uint32_t COMBO_MS = 2000;
+constexpr uint32_t OUTPUT_INTERVAL_MS = 100;  // 10 Hz BLE + serial
 
 // ---- Filter ----
 constexpr float EMA_ALPHA = 0.35f;
 constexpr uint32_t FLOW_WINDOW_MS = 500;
-
-// ---- AUTO POUR trigger: +3 g over entry weight ----
-constexpr float AUTO_POUR_DELTA_G = 3.0f;
 
 // ---- Settled / overload ----
 constexpr float SETTLED_BAND_G = 0.5f;
@@ -40,6 +24,3 @@ constexpr float OVERLOAD_G = 1000.0f;
 #define BREW_UUID_CALIB "0000C0FF-EE00-4000-8000-00DECAFE0013"
 #define BREW_UUID_CONTROL "0000C0FF-EE00-4000-8000-00DECAFE0014"
 #define BREW_DEVICE_NAME "BrewPilot-Scale"
-
-// ---- Units ----
-constexpr float G_TO_OZ = 0.035274f;

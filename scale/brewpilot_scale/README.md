@@ -1,8 +1,8 @@
 # brewpilot_scale
 
-Full BrewPilot scale firmware (SPEC §7): HX711 + median5/EMA @ 10 Hz,
-ST7735S UI (MANUAL / AUTO POUR / SET), 2-button control, BLE GATT,
-NVM settings, deep sleep.
+Headless BrewPilot scale firmware (SPEC §7): HX711 + median5/EMA @ 10 Hz,
+BLE GATT, NVM calibration. No display or buttons — the iOS Scale tab is
+the UI (live weight, tare, units, timer, calibration).
 
 ## Build / flash
 
@@ -10,10 +10,8 @@ NVM settings, deep sleep.
 cd scale/brewpilot_scale
 pio run
 pio run -t upload
-pio device monitor   # 115200: weight at 10 Hz, send `t` to tare
+pio device monitor   # 115200: weight at 10 Hz, `t`=tare `c`=clear-cal
 ```
 
-Board: `esp32-s3-devkitc-1` (change `board =` in platformio.ini if yours differs).
-Wiring: SPEC §7 (HX711 DT16/SCK4 · TFT 8–12/15 · buttons 5/6).
-Wake from deep sleep: TARE button (ESP32-S3 ext0, single pin).
-If the TFT shows wrong colors, try `INITR_GREENTAB` in display_ui.cpp.
+Board: `esp32dev` (classic ESP32; use `esp32-s3-devkitc-1` if you have an S3).
+Wiring: SPEC §7 (HX711 DT16/SCK4).

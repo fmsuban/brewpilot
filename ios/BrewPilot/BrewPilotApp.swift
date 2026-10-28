@@ -8,8 +8,8 @@ struct BrewPilotApp: App {
     var body: some Scene {
         WindowGroup {
             TabView(selection: $tab) {
-                ConnectView()
-                    .tabItem { Label("Connect", systemImage: "antenna.radiowaves.left.and.right") }
+                ConnectView(scale: session.scale)
+                    .tabItem { Label("Scale", systemImage: "scalemass") }
                     .tag(0)
                 RecipeView()
                     .tabItem { Label("Recipe", systemImage: "list.bullet.clipboard") }

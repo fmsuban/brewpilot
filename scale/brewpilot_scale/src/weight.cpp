@@ -24,6 +24,7 @@ long WeightSensor::median(long* v, uint8_t n) {
 bool WeightSensor::poll() {
   if (!_hx.is_ready()) return false;
   long raw = _hx.read();
+  _lastSample = millis();
   _win[_wi] = raw;
   _wi = (_wi + 1) % 5;
   if (_n < 5) _n++;
@@ -64,6 +65,12 @@ float WeightSensor::flowMlS() {
 
 void WeightSensor::tare() { _offset = _ema; }
 
-void WeightSensor::calibrate(float knownG) {
-  if (knownG > 0) _scale = (_ema - _offset) / knownG;
+CalResult WeightSensor::calibrate(float knownG) {
+  if (!(knownG > 0) || !(knownG <= 2000)) return CalResult::NO_RESPONSE;
+  float delta = _ema - _offset;
+  if (fabsf(delta) < 1000) return CalResult::NO_RESPONSE;  // cell must respond
+  float s = delta / knownG;  // negative OK: inverted (soldered) wiring
+  if (fabsf(s) < 0.1f || fabsf(s) > 100000.0f) return CalResult::NO_RESPONSE;
+  _scale = s;
+  return CalResult::OK;
 }

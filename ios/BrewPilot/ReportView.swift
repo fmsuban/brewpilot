@@ -16,7 +16,7 @@ struct ReportView: View {
                             StatCard(title: "Samples", value: "\(session.eventLog.count)")
                             StatCard(
                                 title: "Final",
-                                value: String(format: "%.1f g", session.weightG)
+                                value: "\(session.displayWeight(session.weightG)) \(session.unitLabel)"
                             )
                             StatCard(title: "Phase", value: session.phase.rawValue.capitalized)
                             StatCard(title: "Notes", value: "\(session.coachMessages.count)")

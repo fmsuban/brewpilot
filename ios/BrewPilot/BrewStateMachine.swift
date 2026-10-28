@@ -31,6 +31,38 @@ final class BrewSession: ObservableObject {
     @Published var eventLog: [BrewSample] = []
     @Published var scaleConnected = false
     @Published var pulseIndex = 0
+    @Published var useOunces = UserDefaults.standard.bool(forKey: "useOunces") {
+        didSet { UserDefaults.standard.set(useOunces, forKey: "useOunces") }
+    }
+
+    static let gPerOz = 28.3495
+    var unitLabel: String { useOunces ? "oz" : "g" }
+    func inUnits(_ grams: Double) -> Double { useOunces ? grams / Self.gPerOz : grams }
+    /// Whole-number readout ("023"), zero-padded like a kitchen scale.
+    func displayWeight(_ grams: Double) -> String {
+        let r = inUnits(grams).rounded()
+        if abs(r) >= 1000 {
+            return String(format: "%4.0f", r)
+        }
+        if r < 0 {
+            return String(format: "%04.0f", r) // "-023"
+        }
+        return String(format: "%03.0f", r) // "023"
+    }
+
+    func displayDelta(_ grams: Double) -> String {
+        let r = inUnits(grams).rounded()
+        if abs(r) >= 1000 {
+            return String(format: "%+4.0f", r)
+        }
+        return String(format: "%+04.0f", r) // "+023"
+    }
+    /// Whole-number units for instructions, e.g. "150 g" / "5.3 oz".
+    func unitStr(_ grams: Double) -> String {
+        useOunces
+            ? String(format: "%.1f oz", grams / Self.gPerOz)
+            : String(format: "%.0f g", grams)
+    }
 
     let scale = ScaleBLEManager()
     private var history: [(t: Date, w: Double)] = []
@@ -117,7 +149,7 @@ final class BrewSession: ObservableObject {
         }
         // Guard: pour overshoot.
         if targetG > 0 && grams - targetG > GuardRail.overshootG {
-            coach("You're \(Int(grams - targetG)) g over target — ease off.", severity: "warning")
+            coach("You're \(unitStr(grams - targetG)) over target — ease off.", severity: "warning")
         }
 
         weightG = grams
@@ -200,7 +232,7 @@ final class BrewSession: ObservableObject {
         phase = .pulse
         stepStartAt = now
         targetG = pulseSteps[i].targetTotalG ?? targetG
-        coach("Pulse \(i + 1) of \(pulseSteps.count) — pour to \(Int(targetG)) g.")
+        coach("Pulse \(i + 1) of \(pulseSteps.count) — pour to \(unitStr(targetG)).")
         updateInstruction()
     }
 
@@ -217,10 +249,7 @@ final class BrewSession: ObservableObject {
         guard phase != .done else { return }
         phase = .done
         fireVision("final")
-        coach(String(
-            format: "Finished in %@ at %.0f g (target %.0f).",
-            formatTimer(elapsedS), weightG, recipe.waterG
-        ))
+        coach("Finished in \(formatTimer(elapsedS)) at \(unitStr(weightG)) (target \(unitStr(recipe.waterG))).")
         updateInstruction()
     }
 
@@ -244,22 +273,22 @@ final class BrewSession: ObservableObject {
         case .addCoffee:
             let d = weightG - recipe.coffeeG
             if d < -GuardRail.coffeeToleranceG {
-                instruction = String(format: "Add coffee: %.0f g of %.0f.", weightG, recipe.coffeeG)
+                instruction = "Add coffee: \(unitStr(weightG)) of \(unitStr(recipe.coffeeG))."
             } else if d > GuardRail.coffeeToleranceG {
-                instruction = "Too much coffee — remove \(Int(d)) g."
+                instruction = "Too much coffee — remove \(unitStr(d))."
             } else {
                 instruction = "Coffee in — taring…"
             }
         case .bloom:
             if !bloomPoured {
-                instruction = "Saturate all grounds — pour to \(Int(targetG)) g."
+                instruction = "Saturate all grounds — pour to \(unitStr(targetG))."
             } else {
                 let left = max(0, bloomDuration - Int(Date().timeIntervalSince(stepStartAt)))
                 instruction = "Bloom: wait \(left)s, swirl once."
             }
         case .pulse:
             if pulseIndex < pulseSteps.count {
-                instruction = "Pulse \(pulseIndex + 1)/\(pulseSteps.count): pour to \(Int(targetG)) g."
+                instruction = "Pulse \(pulseIndex + 1)/\(pulseSteps.count): pour to \(unitStr(targetG))."
             }
         case .drawdown:
             instruction = "Drawdown — let it drain."
