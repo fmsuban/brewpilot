@@ -153,6 +153,7 @@ def test_endpoint_falls_back_on_model_error(monkeypatch):
 def test_vision_prompt_mentions_schema():
     assert "bloom_active" in VISION_SYSTEM_PROMPT
     assert "coaching" in VISION_SYSTEM_PROMPT
+    assert "bed_drained" in VISION_SYSTEM_PROMPT
     text = build_vision_user_text(VisionContext(step="bloom", elapsed_s=12, target_g=50))
     assert "bloom" in text and "12" in text
 
@@ -165,6 +166,11 @@ def test_analyze_vision_validates_schema():
     }
     out = analyze_vision(VisionContext(step="bloom"), b"img", complete=lambda s, u: good)
     assert out.coaching == "Keep going."
+    assert out.bed_drained is False  # older replies without the field still validate
+    drained = analyze_vision(
+        VisionContext(step="drawdown"), b"img", complete=lambda s, u: {**good, "bed_drained": True}
+    )
+    assert drained.bed_drained is True
     with pytest.raises(ModelError):
         analyze_vision(VisionContext(step="bloom"), b"img", complete=lambda s, u: ["not", "a", "dict"])
 

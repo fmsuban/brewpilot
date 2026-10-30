@@ -100,3 +100,43 @@ sleep: firmware is ESP32 + HX711 only (weigh, filter, stream 10 Hz over
 BLE, persist tare/calibration). Live weight, tare, g/oz units, timer
 with auto-start, and the calibration wizard all live in the iOS Scale
 tab (ex-Connect). Superseded: D8, D9, D12.
+
+## 2026-10-29 — Day 4
+
+### D18: Pulses rest; pours end on the settled flag
+A pour step is done when the scale reports settled within 3 g of target,
+not when the weight first crosses it. Each pulse is followed by a REST
+phase (until `duration_s` from pulse start, at least 5 s); an early pour
+starts the next pulse (nudge, never block). The coffee tare also waits
+for settled. The app tares itself when prep is confirmed (wet filter +
+mug). The brew clock starts on the first +3 g pour and excludes pauses.
+
+### D19: Drawdown end comes from the camera, not the scale
+Scale under mug + dripper means total mass is flat while the bed
+drains, so the old "flow < 0.5 ml/s for 10 s" rule fired ~10 s after the
+last pour with the dripper still full. `/vision` gains `bed_drained`;
+during DRAWDOWN the app polls it every 5 s from +15 s. Also ends the
+brew: "Drained" button, dripper lifted off (> 8 g drop), 180 s cap.
+Proxies deployed before the field return no `bed_drained` (decoded as
+nil), so only the manual paths apply until redeploy.
+
+### D20: Vision checks after the pour, one in flight, model-only bubbles
+Frames are taken 1.5 s after a pour settles (kettle out of frame, bed
+visible), cropped to the on-screen framing box, ≤ 320 px JPEG q0.6 (Wonder: ~7 s at 320 vs ~9 s at 640).
+One request in flight, 20 s client timeout (Wonder takes 6–13 s), drawdown polls dropped when
+busy. `source: fallback` replies are not shown: a canned line is not
+something the camera saw. Vision bubbles carry an eye icon and the step
+label.
+
+### D21: Voice coach + one-shot local warnings
+AVSpeechSynthesizer (playback category, mixes with other audio) speaks
+the stop cue, the next-pour cue, warnings, and vision coaching; toggle
+in the Brew header. Overshoot, flow-zone, and slow-drawdown warnings fire
+once per step (the old overshoot check appended a bubble on every 10 Hz
+sample).
+
+### D22: Proxy runs on the Mac for the demo
+The app reads `proxyURL` (launch argument `-proxyURL http://<mac-ip>:8000`
+or a stored default) and falls back to Modal. Info.plist allows local
+networking. Latency is the model, not the host: Wonder measured 6–11 s
+locally vs 9–13 s on Modal. Supersedes the "iOS points at Modal" part of D15.

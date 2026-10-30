@@ -22,6 +22,7 @@ struct ConnectView: View {
                         connectionCard
                         weightCard
                         timerCard
+                        voiceCard
                         calibrationCard
                         framingCard
                         checklistCard
@@ -31,7 +32,10 @@ struct ConnectView: View {
             }
             .navigationTitle("Scale")
             .toolbarBackground(Color.espressoBlack, for: .navigationBar)
-            .onAppear { session.scale.startScanning() }
+            .onAppear {
+                session.scale.startScanning()
+                session.camera.start()
+            }
             .onChange(of: scale.weightG) { _, g in
                 stopwatch.onWeight(g)
                 if let pending = calPending, abs(g - pending) <= max(3, pending * 0.2) {
@@ -61,6 +65,8 @@ struct ConnectView: View {
                 Text(scale.peripheralName ?? "BrewPilot-Scale")
                 Spacer()
                 if session.scaleConnected {
+                    Text("\(scale.droppedPackets) dropped")
+                        .monospacedDigit()
                     Text("🔋 \(scale.batteryPct)%")
                 }
             }
@@ -168,6 +174,36 @@ struct ConnectView: View {
         .brewCard()
     }
 
+    // MARK: - Voice coach
+
+    private var voiceCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionTitle(text: "Voice coach")
+                Spacer()
+                Toggle("", isOn: $session.voiceOn)
+                    .labelsHidden()
+                    .tint(Color.caramel)
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "speaker.fill")
+                    .foregroundStyle(Color.creamDim)
+                Slider(value: $session.voiceVolume, in: 0.1...1) { editing in
+                    if !editing { session.previewVoice() }
+                }
+                .tint(Color.caramel)
+                Image(systemName: "speaker.wave.3.fill")
+                    .foregroundStyle(Color.creamDim)
+            }
+            .disabled(!session.voiceOn)
+            .opacity(session.voiceOn ? 1 : 0.5)
+            Text("Relative to the phone's media volume. Release the slider to hear a sample.")
+                .font(.caption)
+                .foregroundStyle(Color.creamDim)
+        }
+        .brewCard()
+    }
+
     // MARK: - Calibration
 
     private var calibrationCard: some View {
@@ -261,19 +297,14 @@ struct ConnectView: View {
     private var framingCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionTitle(text: "Camera framing")
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.espressoDeep)
-                    .frame(height: 120)
-                VStack(spacing: 6) {
-                    Image(systemName: "viewfinder")
-                        .font(.largeTitle)
-                        .foregroundStyle(Color.creamDim)
-                    Text("Point the rear camera at the dripper")
-                        .font(.caption)
-                        .foregroundStyle(Color.creamDim)
-                }
+            HStack {
+                Spacer()
+                CameraCard(camera: session.camera, height: 280)
+                Spacer()
             }
+            Text("Keep the dripper and the coffee bed inside the dashed box — that's all the coach sees.")
+                .font(.caption)
+                .foregroundStyle(Color.creamDim)
         }
         .brewCard()
     }

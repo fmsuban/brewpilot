@@ -43,8 +43,9 @@ final class ScaleBLEManager: NSObject, ObservableObject {
     @Published var overload = false
     @Published var batteryPct: UInt8 = 0
     @Published var lastPacketAt: Date?
+    @Published var droppedPackets = 0 // seq gaps this connection (SPEC: zero drops)
 
-    var onWeight: ((Double) -> Void)?
+    var onWeight: ((Double, Bool) -> Void)? // grams, settled
     var onConnectionChange: ((Bool) -> Void)?
 
     private var central: CBCentralManager?
@@ -53,6 +54,7 @@ final class ScaleBLEManager: NSObject, ObservableObject {
     private var tareChar: CBCharacteristic?
     private var calibChar: CBCharacteristic?
     private var controlChar: CBCharacteristic?
+    private var lastSeq: UInt32?
 
     override init() {
         super.init()
@@ -108,8 +110,18 @@ extension ScaleBLEManager: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         isConnected = false
+        weightChar = nil
+        tareChar = nil
+        calibChar = nil
+        controlChar = nil
         onConnectionChange?(false)
-        startScanning() // watchdog: auto-reconnect
+        // Watchdog: a pending connect to the known scale never times out and
+        // reconnects as soon as it advertises again, faster than a fresh scan.
+        central.connect(peripheral, options: nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        startScanning()
     }
 }
 
@@ -135,6 +147,8 @@ extension ScaleBLEManager: CBPeripheralDelegate {
                 break
             }
         }
+        lastSeq = nil
+        droppedPackets = 0
         isConnected = true
         onConnectionChange?(true)
     }
@@ -143,11 +157,15 @@ extension ScaleBLEManager: CBPeripheralDelegate {
         guard characteristic.uuid == ScaleUUID.weight,
               let data = characteristic.value,
               let packet = WeightPacket.parse(data) else { return }
+        if let last = lastSeq, packet.seq &- last > 1 {
+            droppedPackets += Int(packet.seq &- last &- 1)
+        }
+        lastSeq = packet.seq
         weightG = packet.weightG
         settled = packet.settled
         overload = packet.overload
         batteryPct = packet.batteryPct
         lastPacketAt = Date()
-        onWeight?(packet.weightG)
+        onWeight?(packet.weightG, packet.settled)
     }
 }

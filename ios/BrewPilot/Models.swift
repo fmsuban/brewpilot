@@ -39,14 +39,29 @@ struct Recipe: Codable, Hashable {
     )
 }
 
+struct VisionContext: Codable {
+    var step: String
+    var elapsedS: Double
+    var targetG: Double
+}
+
 struct VisionResult: Codable {
     var bloomActive: Bool
     var bubbles: String
     var pourPosition: String
     var bedEven: Bool
     var channeling: Bool
+    var bedDrained: Bool? // nil from proxies deployed before the field existed
     var coaching: String
     var severity: String
+}
+
+/// One finished pour: what the recipe asked for vs. what landed on the scale.
+struct StepResult: Codable, Hashable {
+    var id: String
+    var targetG: Double
+    var actualG: Double
+    var durationS: Double
 }
 
 struct BrewSample: Codable {
@@ -56,8 +71,13 @@ struct BrewSample: Codable {
     var flowMlS: Double
 }
 
+enum CoachOrigin: String, Codable {
+    case local, vision
+}
+
 struct CoachMessage: Identifiable, Hashable {
     var id = UUID()
     var text: String
     var severity: String
+    var origin: CoachOrigin = .local
 }

@@ -29,7 +29,12 @@ image = (
         "python-multipart==0.0.12",
         "meta-sam-parser==0.1.0",
     )
-    .add_local_dir("server", "/root/server")
+    # The key comes from the brewpilot-meta secret; keep local .env out of the image.
+    .add_local_dir(
+        "server",
+        "/root/server",
+        ignore=["**/.env", "**/.env.*", "**/__pycache__", "tests"],
+    )
 )
 
 

@@ -78,7 +78,7 @@ flowchart LR
 
 **Data flow during a brew:**
 - Weight: ESP32 → BLE notify (10 Hz) → app → state machine + flow-rate calc. Never leaves the phone.
-- Vision: state machine fires an event ("BLOOM_STARTED") → app grabs latest frame, downscales to ~640 px JPEG (~60–100 KB) → proxy → Muse Wonder → JSON observation → coach message. Budget 2–6 s per check; show a subtle "thinking" chip.
+- Vision: state machine fires an event ("BLOOM_STARTED") → app grabs latest frame, downscales to ~320 px JPEG → proxy → Muse Wonder → JSON observation → coach message. Measured ~7 s per check (that is why checks happen between pours); show a subtle "thinking" chip.
 - Everything else is local math.
 
 ---
@@ -144,24 +144,30 @@ u8   battery_pct
 ### 8.1 Brew state machine (deterministic, in Swift)
 
 ```
-IDLE → PREP(rinse filter, heat kettle — user confirms)
-    → ADD_COFFEE   (wait until weight ≈ recipe.coffee_g ± 2 g; coach if off)
+IDLE → PREP(rinse filter, dump rinse water, heat kettle — user confirms → app-side tare)
+    → ADD_COFFEE   (wait until *settled* at recipe.coffee_g ± 2 g; coach if off)
     → TARE         (auto)
-    → BLOOM        (pour target_add_g over window; hold duration_s; vision check @ +10 s)
-    → PULSE ×N     (pour to target_total_g at flow target; vision check at pulse end)
-    → DRAWDOWN     (wait until flow < 0.5 ml/s for 10 s or timeout 90 s)
+    → BLOOM        (pour target_add_g; hold to duration_s from the first pour; vision check 10 s after the pour settles)
+    → PULSE ×N     (pour to target_total_g at flow target; done when settled within 3 g)
+      → REST       (until duration_s from pulse start, ≥ 5 s; vision check 1.5 s after the pour settles; an early pour starts the next pulse)
+    → DRAWDOWN     (vision polls bed_drained every 5 s from +15 s · "Drained" button · dripper lifted off · cap 180 s)
     → DONE         (final frame → SAM + report)
 ```
 
-Guard rails (local logic, not AI):
-- weight drop > 8 g in < 1 s → rig lifted/moved → pause + "put it back" prompt
-- pour overshoot > 5 g past target → coach warning immediately, continue
+Guard rails (local logic, not AI; every warning fires once per step):
+- weight drop > 8 g in < 1 s → rig lifted/moved → pause + "put it back" prompt (in DRAWDOWN: dripper lifted → done)
+- stop cue when weight + flow × 0.5 s ≥ target (water in the air + reaction + speech latency)
+- pour overshoot > 5 g past target → coach warning immediately, continue; per-step delta recorded after settle
+- flow outside the step's `flow_ml_s` for > 2 s mid-pour → "slow down" / "a little faster"
 - scale silent > 1.5 s → reconnect prompt
+- drawdown > 90 s → "grind coarser" note
+
+Why drawdown needs the camera: the scale sits under mug + dripper, so total mass is flat while the bed drains. Weight can say when pouring stopped, never when the bed went dry.
 
 **Flow rate:** derivative of smoothed weight over a 500 ms sliding window (ml/s). This is the number the pour bar displays; green zone comes from the recipe step.
 
 ### 8.2 Camera pipeline
-Rear camera, 720p30 `AVCaptureVideoDataOutput`, keep latest frame in a 1-deep buffer. On state-machine event: crop to overlay rect → downscale ~640 px → JPEG q0.6 → upload. **No continuous streaming to the cloud** (latency, cost, privacy). Report screen stores the 4–6 event frames locally.
+Rear camera, 720p30 `AVCaptureVideoDataOutput`, keep latest frame in a 1-deep buffer. On state-machine event: crop to overlay rect → downscale ~320 px → JPEG q0.6 → upload. **No continuous streaming to the cloud** (latency, cost, privacy). Report screen stores the 4–6 event frames locally.
 
 ### 8.3 Screens
 Scale · Recipe · Brew · Report (§4). Brew screen layout: weight huge (120 pt), target + delta under it, timer, flow bar, instruction banner, coach bubble stack, camera preview as small PiP (the real coffee is in front of you — the AI is the one that needs the camera, not you).
@@ -202,7 +208,7 @@ Send: single JPEG + step context (`{"step": "bloom", "elapsed_s": 12, "target_g"
   "severity": "info"
 }
 ```
-Check moments: bloom +10 s · end of each pulse (2–3×) · drawdown · final bed (5–6 calls per brew total). Show `coaching` verbatim as a coach bubble; use the structured fields to gate state transitions *softly* (nudge, never block).
+Check moments: bloom (10 s after the pour settles) · each rest (1.5 s after the pour settles, kettle out of frame) · drawdown · final bed (5–6 coaching calls) plus silent `bed_drained` polls every 5 s during drawdown. One call in flight, 20 s timeout (Wonder takes 6–13 s), proxy fallbacks are never shown as coaching. Show `coaching` verbatim as a coach bubble; use the structured fields to gate state transitions *softly* (nudge, never block).
 
 ### 9.3 Final bed segmentation — SAM 3.1
 Final frame → SAM prompt (text or point prompt at bed center, per API capability at kickoff) → mask → app renders mask overlay tinted by local dryness/pour uniformity heuristics → the report's signature visual. Even a static "did the bed drain flat" check is demo-worthy.
@@ -229,7 +235,7 @@ Feed: step timeline + per-step errors (g over/under, ml/s avg) + vision observat
 - Bloom: ~2–2.5× coffee weight (50 g), 40–50 s, gentle saturation. Vigorous bubbles = fresh coffee.
 - Pours: 3–4 pulses, 4–7 ml/s, spiral center-out, keep slurry level (don't let bed go dry between pulses).
 - Defects the VLM can actually see: dry high-and-dry grounds on the wall (pour too center/out), obvious channels/tunnels in spent bed, off-center pouring, way-too-fast pour (fountain), no bloom bubbles (stale coffee), bed drained into a mound (uneven).
-- Weight-only signals (no vision needed): overshoot, pour rate, stall (drawdown > 90 s → grind too fine).
+- Weight-only signals (no vision needed): overshoot, pour rate, pour stopped (settled). Drawdown length (> 90 s → grind too fine) needs the camera: total mass is flat while the bed drains.
 
 ---
 

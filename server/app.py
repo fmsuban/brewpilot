@@ -80,6 +80,7 @@ class VisionResult(BaseModel):
     pour_position: str = "unknown"
     bed_even: bool = True
     channeling: bool = False
+    bed_drained: bool = False
     coaching: str = ""
     severity: str = "info"
 
@@ -201,8 +202,11 @@ VISION_SYSTEM_PROMPT = """You watch a home pour-over coffee brew through a phone
 Output strict JSON (temperature 0, no prose, no markdown):
 {"bloom_active": bool, "bubbles": "none"|"weak"|"vigorous", \
 "pour_position": "center"|"edge"|"off"|"unknown", "bed_even": bool, \
-"channeling": bool, "coaching": str, "severity": "info"|"warning"}
+"channeling": bool, "bed_drained": bool, "coaching": str, \
+"severity": "info"|"warning"}
 Coaching is one short sentence, imperative, addressed to the brewer.
+bed_drained is true only when no standing water remains above the coffee \
+bed (drawdown finished); the scale cannot see this, so be strict.
 Defects you can actually see: dry grounds high on the filter wall, \
 channels/tunnels in the spent bed, off-center pouring, way-too-fast pour, \
 no bloom bubbles (stale coffee), bed mounded instead of flat. If the frame \
