@@ -19,3 +19,6 @@ DerivedData/
 *.xcuserstate
 *.moved-aside
 ios/BrewPilot.xcodeproj/
+
+# submission artifacts live on YouTube, not in git
+submission_material/
