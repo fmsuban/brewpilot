@@ -64,19 +64,6 @@ struct BrewView: View {
                     .padding(.vertical, 4)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            SectionTitle(text: "Flow")
-                            Spacer()
-                            Text(String(format: "%5.1f ml/s", session.flowMlS))
-                                .font(.subheadline.weight(.semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(flowColor)
-                        }
-                        FlowBar(flow: session.flowMlS, zone: session.flowRange)
-                    }
-                    .brewCard()
-
-                    VStack(alignment: .leading, spacing: 8) {
                         SectionTitle(text: "Now")
                         if session.stopCue {
                             Text("STOP")
@@ -186,46 +173,5 @@ struct BrewView: View {
         "\(session.displayDelta(session.weightG - session.targetG)) \(session.unitLabel)"
     }
 
-    private var flowColor: Color {
-        session.flowRange.contains(session.flowMlS) ? .brewGreen : .cream
-    }
 }
 
-struct FlowBar: View {
-    var flow: Double
-    var zone: ClosedRange<Double> = 4...7
-
-    private let maxFlow = 12.0
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.espressoLine)
-                    .frame(height: 10)
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.brewGreen.opacity(0.4))
-                    .frame(width: zoneWidth(w), height: 10)
-                    .offset(x: zoneOffset(w))
-                Circle()
-                    .fill(needleColor)
-                    .frame(width: 16, height: 16)
-                    .offset(x: needleOffset(w))
-            }
-            .frame(maxHeight: .infinity)
-        }
-        .frame(height: 20)
-    }
-
-    private func zoneWidth(_ w: CGFloat) -> CGFloat {
-        w * CGFloat((zone.upperBound - zone.lowerBound) / maxFlow)
-    }
-    private func zoneOffset(_ w: CGFloat) -> CGFloat { w * CGFloat(zone.lowerBound / maxFlow) }
-    private func needleOffset(_ w: CGFloat) -> CGFloat {
-        min(max(CGFloat(flow) / CGFloat(maxFlow), 0), 1) * w - 8
-    }
-    private var needleColor: Color {
-        zone.contains(flow) ? .brewGreen : .caramel
-    }
-}

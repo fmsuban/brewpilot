@@ -131,6 +131,8 @@ final class BrewSession: ObservableObject {
     private var drawdownStartAt = Date()
     private var lastDrainPollAt = Date.distantPast
     private var flowOffSince: Date?
+    private var stallAnchor: (since: Date, grams: Double)? // weight-stability clock for the STOP fallback
+    private var cuedSteps = Set<String>() // STOP latched this step (display may have unlatched)
     private var warned: Set<String> = [] // one-shot warnings, keyed per step
     private var visionFired: Set<String> = []
     private var housekeeping: Timer?
@@ -205,12 +207,15 @@ final class BrewSession: ObservableObject {
         stopCue = false
         scaleLost = false
         flowOffSince = nil
+        stallAnchor = nil
+        cuedSteps = []
         warned = []
         visionFired = []
         pausedFrom = .idle
         vision.reset()
         ProxyClient.shared.warmUp() // wake the Modal container before the first vision check
         updateInstruction()
+        say("Brew started. Rinse the filter, then confirm ready.")
     }
 
     /// Prep done: zero the wet filter + mug (SPEC 8.1 TARE), then dose.
@@ -223,6 +228,7 @@ final class BrewSession: ObservableObject {
         targetG = recipe.coffeeG
         stepStartAt = Date()
         coach("Tared. Add \(unitStr(recipe.coffeeG)) of ground coffee.")
+        say("Tared. Add \(spoken(recipe.coffeeG)) of coffee.")
         updateInstruction()
     }
 
@@ -238,6 +244,7 @@ final class BrewSession: ObservableObject {
         }
         pauseStartAt = nil
         history.removeAll()
+        stallAnchor = nil
         phase = pausedFrom
         coach("Resumed.")
         updateInstruction()
@@ -324,7 +331,9 @@ final class BrewSession: ObservableObject {
         case .addCoffee:
             targetG = recipe.coffeeG
             // Wait for settled: mid-pour the weight passes 20 g on its way to 22.
-            if settled && abs(grams - recipe.coffeeG) <= GuardRail.coffeeToleranceG {
+            // doseStalled covers scales that never raise the flag (noise/drift).
+            if (settled && abs(grams - recipe.coffeeG) <= GuardRail.coffeeToleranceG)
+                || doseStalled(now: now, grams: grams) {
                 tareOffset += grams
                 weightG = 0
                 history.removeAll()
@@ -332,6 +341,7 @@ final class BrewSession: ObservableObject {
                 bloomPoured = false
                 stopCue = false
                 flowOffSince = nil
+                stallAnchor = nil
                 stepStartAt = now
                 targetG = bloomStep?.targetAddG ?? 50
                 coach("Coffee in. Bloom — saturate everything.")
@@ -343,12 +353,18 @@ final class BrewSession: ObservableObject {
             }
             if !bloomPoured {
                 trackPour("bloom", now: now, grams: grams)
-                if brewStartAt != nil && settled && grams >= targetG - GuardRail.stepDoneG {
+                if brewStartAt != nil && ((settled && grams >= targetG - GuardRail.stepDoneG)
+                    || pourStalled("bloom", now: now, grams: grams)) {
                     bloomPoured = true
                     stopCue = false
+                    stallAnchor = nil
                     pourStopAt = now
                     restBaseG = grams
                     recordStep("bloom", label: "Bloom", grams: grams, now: now)
+                } else if brewStartAt != nil && cuedSteps.contains("bloom")
+                    && flowMlS < GuardRail.pouringFlowMlS && grams < targetG - 10 {
+                    warnOnce("short_bloom", "Short of target — keep pouring to \(unitStr(targetG)).",
+                             spoken: "Keep pouring.")
                 }
             } else {
                 fireVision("bloom", label: "Bloom",
@@ -365,13 +381,11 @@ final class BrewSession: ObservableObject {
             }
             targetG = step.targetTotalG ?? targetG
             trackPour(step.id, now: now, grams: grams)
-            if settled && grams >= targetG - GuardRail.stepDoneG {
-                recordStep(step.id, label: "Pulse \(pulseIndex + 1)", grams: grams, now: now)
-                if pulseIndex + 1 < pulseSteps.count {
-                    enterRest(now: now, grams: grams)
-                } else {
-                    enterDrawdown(now: now)
-                }
+            if (settled && grams >= targetG - GuardRail.stepDoneG) || pourStalled(step.id, now: now, grams: grams) {
+                advanceFromPulse(step, grams: grams, now: now)
+            } else if cuedSteps.contains(step.id) && flowMlS < GuardRail.pouringFlowMlS && grams < targetG - 10 {
+                warnOnce("short_\(step.id)", "Short of target — keep pouring to \(unitStr(targetG)).",
+                         spoken: "Keep pouring.")
             }
         case .rest:
             if let step = pulseSteps[safe: pulseIndex] {
@@ -396,7 +410,11 @@ final class BrewSession: ObservableObject {
         let projected = grams + max(0, flowMlS) * GuardRail.stopLeadS
         if !stopCue && (grams >= targetG - 0.5 || (pouring && projected >= targetG)) {
             stopCue = true
+            cuedSteps.insert(stepId)
             say("Stop.", interrupt: true)
+        }
+        if stopCue && !pouring && grams < targetG - GuardRail.stepDoneG {
+            stopCue = false // stopped short: show the pour instruction again
         }
         if grams - targetG > GuardRail.overshootG {
             warnOnce("over_\(stepId)", "Over target — stop pouring.", spoken: "Over. Stop pouring.")
@@ -418,6 +436,51 @@ final class BrewSession: ObservableObject {
         }
     }
 
+    /// True once the weight has held within ±1 g for 3 s. Call every tick
+    /// while the entry condition holds; resets otherwise.
+    private func weightStable(now: Date, grams: Double) -> Bool {
+        if let a = stallAnchor, abs(grams - a.grams) < 1.0 {
+            guard now.timeIntervalSince(a.since) >= 3 else { return false }
+            stallAnchor = nil
+            return true
+        }
+        stallAnchor = (now, grams)
+        return false
+    }
+
+    /// Fallback advance: STOP showed this step and the weight held near
+    /// target, but the scale never reported settled (noise/drift) or the
+    /// pour stopped a few grams short — move on instead of stranding on STOP.
+    /// Keyed on cuedSteps, not the display flag: unlatching the STOP banner
+    /// when short must not disarm the fallback.
+    private func pourStalled(_ stepId: String, now: Date, grams: Double) -> Bool {
+        guard cuedSteps.contains(stepId), grams >= targetG - 10 else {
+            stallAnchor = nil
+            return false
+        }
+        return weightStable(now: now, grams: grams)
+    }
+
+    /// Dosing fallback: within ±2 g of the coffee target and stable — the
+    /// scale's settled flag never arrived, but the dose is verifiably there.
+    private func doseStalled(now: Date, grams: Double) -> Bool {
+        guard abs(grams - recipe.coffeeG) <= GuardRail.coffeeToleranceG else {
+            stallAnchor = nil
+            return false
+        }
+        return weightStable(now: now, grams: grams)
+    }
+
+    private func advanceFromPulse(_ step: PourStep, grams: Double, now: Date) {
+        stallAnchor = nil
+        recordStep(step.id, label: "Pulse \(pulseIndex + 1)", grams: grams, now: now)
+        if pulseIndex + 1 < pulseSteps.count {
+            enterRest(now: now, grams: grams)
+        } else {
+            enterDrawdown(now: now)
+        }
+    }
+
     private func recordStep(_ id: String, label: String, grams: Double, now: Date) {
         let delta = grams - targetG
         stepResults.append(StepResult(
@@ -428,6 +491,8 @@ final class BrewSession: ObservableObject {
         ))
         if delta >= GuardRail.stepDoneG {
             coach("\(label): \(signedStr(delta)) over target.", severity: "warning")
+        } else if delta <= -GuardRail.stepDoneG {
+            coach("\(label): \(signedStr(delta)) under target.", severity: "warning")
         } else {
             coach("\(label): on target (\(signedStr(delta))).")
         }
@@ -449,6 +514,7 @@ final class BrewSession: ObservableObject {
         stepStartAt = now
         stopCue = false
         flowOffSince = nil
+        stallAnchor = nil
         targetG = step.targetTotalG ?? targetG
         coach("Pulse \(i + 1) of \(pulseSteps.count) — pour to \(unitStr(targetG)).")
         say("Pour to \(spoken(targetG)).")
@@ -457,13 +523,19 @@ final class BrewSession: ObservableObject {
     private func enterRest(now: Date, grams: Double) {
         phase = .rest
         stopCue = false
+        stallAnchor = nil
         pourStopAt = now
         restBaseG = grams
+        let left = max(0, Int(nextPulseAt.timeIntervalSince(now).rounded(.up)))
+        let next = pulseSteps[safe: pulseIndex + 1]?.targetTotalG ?? recipe.waterG
+        coach("Rest — next pour to \(unitStr(next)) in \(left)s.")
+        say("Rest. Next pour in \(left) seconds.")
     }
 
     private func enterDrawdown(now: Date) {
         phase = .drawdown
         stopCue = false
+        stallAnchor = nil
         pourStopAt = now
         drawdownStartAt = now
         lastDrainPollAt = now
